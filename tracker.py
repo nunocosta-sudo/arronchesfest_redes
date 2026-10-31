@@ -1,58 +1,64 @@
-import os
-import time
 import datetime
-import requests
+import json
+import os
+import sys
+
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+import requests
 
-def get_instagram_followers(username):
-    """Obtém os seguidores usando cookie de sessão com gestão de retentativas (Rate Limit 429)."""
-    session_id = os.getenv("INSTA_SESSION_ID")
-    
-    if not session_id:
-        raise Exception("O segredo INSTA_SESSION_ID não foi configurado no GitHub!")
+INSTAGRAM_ACCOUNT = "festivalarronches"
+SHEET_NAME = "Instagram_Festival_Tracker"
 
-    url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "X-IG-App-ID": "936619743392459",
-        "Cookie": f"sessionid={session_id}"
-    }
 
-    # Tenta até 3 vezes com intervalo entre tentativas
-    for attempt in range(1, 4):
-        response = requests.get(url, headers=headers, timeout=15)
-        
-        if response.status_code == 200:
-            data = response.json()
-            return data["data"]["user"]["edge_followed_by"]["count"]
-        elif response.status_code == 429:
-            print(f"Aviso: Recebido bloqueio 429 (Tentativa {attempt}/3). A aguardar 10 segundos...")
-            time.sleep(10)
-        else:
-            raise Exception(f"Erro no Instagram (Status {response.status_code}): {response.text[:100]}")
+def get_instagram_followers():
+    """Obtém os seguidores através da API oficial do Instagram."""
+    # Modo de teste: permite validar o Google Sheet antes de teres o token
+    fake = os.getenv("FAKE_FOLLOWERS")
+    if fake:
+        print("Aviso: a usar FAKE_FOLLOWERS (modo de teste).")
+        return int(fake)
 
-    raise Exception("Instagram bloqueou por excesso de pedidos (Status 429) após 3 tentativas.")
+    token = os.getenv("INSTA_TOKEN")
+    if not token:
+        raise RuntimeError("O secret INSTA_TOKEN não foi configurado no GitHub!")
+
+    response = requests.get(
+        "https://graph.instagram.com/v23.0/me",
+        params={"fields": "username,followers_count", "access_token": token},
+        timeout=30,
+    )
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Erro na API do Instagram (Status {response.status_code}): {response.text[:200]}"
+        )
+
+    data = response.json()
+
+    # Confirma que o token pertence mesmo à conta esperada
+    if data.get("username", "").lower() != INSTAGRAM_ACCOUNT.lower():
+        raise RuntimeError(
+            f"O token pertence a '{data.get('username')}', não a '{INSTAGRAM_ACCOUNT}'."
+        )
+
+    return data["followers_count"]
+
 
 def append_to_sheets(date_str, followers):
-    """Lida com a autenticação e adiciona a nova linha ao Google Sheets."""
-    scope = [
-        "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/drive"
-    ]
-    
-    creds = ServiceAccountCredentials.from_json_keyfile_name("google_credentials.json", scope)
-    client = gspread.authorize(creds)
-    sheet = client.open("Instagram_Festival_Tracker").sheet1
-    sheet.append_row([date_str, followers])
+    """Autentica com a service account e adiciona uma linha ao Google Sheets."""
+    creds_dict = json.loads(os.environ["GOOGLE_CREDS"])
+    client = gspread.service_account_from_dict(creds_dict)
+    sheet = client.open(SHEET_NAME).sheet1
+    sheet.append_row([date_str, followers], value_input_option="USER_ENTERED")
+
 
 if __name__ == "__main__":
-    INSTAGRAM_ACCOUNT = "festivalarronches" 
     today = datetime.date.today().strftime("%d/%m/%Y")
-    
+
     try:
-        followers_count = get_instagram_followers(INSTAGRAM_ACCOUNT)
+        followers_count = get_instagram_followers()
         append_to_sheets(today, followers_count)
         print(f"[{today}] Sucesso: {followers_count} seguidores registados para '{INSTAGRAM_ACCOUNT}'.")
     except Exception as e:
         print(f"Erro ao executar o tracking: {e}")
+        sys.exit(1)  # faz o workflow falhar (e avisar-te) em vez de parecer sucesso
