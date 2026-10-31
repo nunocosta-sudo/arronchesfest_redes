@@ -1,40 +1,30 @@
+import os
 import datetime
-import json
-import re
 import requests
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
 def get_instagram_followers(username):
-    """Obtém os seguidores tentando primeiro o Picuki (espelho público) e depois a web API do Instagram."""
+    """Obtém os seguidores usando o cookie de sessão do Instagram."""
+    session_id = os.getenv("INSTA_SESSION_ID")
     
-    # 1. Tentativa via Picuki (método mais estável para GitHub Actions)
-    try:
-        url = f"https://www.picuki.com/profile/{username}"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        }
-        res = requests.get(url, headers=headers, timeout=10)
-        if res.status_code == 200:
-            match = re.search(r'<span class="followed_by">([0-9,\.\s]+)</span>', res.text)
-            if match:
-                raw_num = match.group(1).replace(',', '').replace('.', '').strip()
-                return int(raw_num)
-    except Exception as e:
-        print(f"Aviso: Tentativa Picuki falhou ({e}), a tentar método alternativo...")
+    if not session_id:
+        raise Exception("O segredo INSTA_SESSION_ID não foi configurado no GitHub!")
 
-    # 2. Tentativa via endpoint alternativo com cabeçalhos de mobile
     url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}"
     headers = {
-        "User-Agent": "Instagram 219.0.0.12.117 Android",
-        "X-IG-App-ID": "936619743392459"
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "X-IG-App-ID": "936619743392459",
+        "Cookie": f"sessionid={session_id}"
     }
-    response = requests.get(url, headers=headers, timeout=10)
-    if response.status_code == 200:
-        data = response.json()
-        return data["data"]["user"]["edge_followed_by"]["count"]
 
-    raise Exception(f"Não foi possível extrair os seguidores do perfil @{username}.")
+    response = requests.get(url, headers=headers, timeout=15)
+    
+    if response.status_code != 200:
+        raise Exception(f"Erro no Instagram (Status {response.status_code}): {response.text[:100]}")
+
+    data = response.json()
+    return data["data"]["user"]["edge_followed_by"]["count"]
 
 def append_to_sheets(date_str, followers):
     """Lida com a autenticação e adiciona a nova linha ao Google Sheets."""
