@@ -2,9 +2,9 @@ name: Daily Instagram Tracker
 
 on:
   schedule:
-    # Corre todos os dias às 09:00 UTC
+    # Executa automaticamente todos os dias às 09:00 UTC
     - cron: '0 9 * * *'
-  workflow_dispatch: # Permite correr manualmente a qualquer momento
+  workflow_dispatch: # Permite a execução manual através do botão "Run workflow"
 
 jobs:
   build:
