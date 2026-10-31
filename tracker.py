@@ -33,3 +33,26 @@ def get_instagram_followers(username):
             raise Exception(f"Erro no Instagram (Status {response.status_code}): {response.text[:100]}")
 
     raise Exception("Instagram bloqueou por excesso de pedidos (Status 429) após 3 tentativas.")
+
+def append_to_sheets(date_str, followers):
+    """Lida com a autenticação e adiciona a nova linha ao Google Sheets."""
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    
+    creds = ServiceAccountCredentials.from_json_keyfile_name("google_credentials.json", scope)
+    client = gspread.authorize(creds)
+    sheet = client.open("Instagram_Festival_Tracker").sheet1
+    sheet.append_row([date_str, followers])
+
+if __name__ == "__main__":
+    INSTAGRAM_ACCOUNT = "festivalarronches" 
+    today = datetime.date.today().strftime("%d/%m/%Y")
+    
+    try:
+        followers_count = get_instagram_followers(INSTAGRAM_ACCOUNT)
+        append_to_sheets(today, followers_count)
+        print(f"[{today}] Sucesso: {followers_count} seguidores registados para '{INSTAGRAM_ACCOUNT}'.")
+    except Exception as e:
+        print(f"Erro ao executar o tracking: {e}")
