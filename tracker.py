@@ -29,7 +29,7 @@ def append_to_sheets(date_str, followers):
 
 if __name__ == "__main__":
     # NOME DA PÁGINA DO FESTIVAL
-    INSTAGRAM_ACCOUNT = "nome_da_pagina_do_festival" 
+    INSTAGRAM_ACCOUNT = "festivalarronches" 
     
     today = datetime.date.today().strftime("%d/%m/%Y")
     
